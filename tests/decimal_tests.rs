@@ -1316,6 +1316,25 @@ fn it_can_reject_invalid_formats() {
 }
 
 #[test]
+fn it_can_reject_large_numbers_with_panic() {
+    let tests = &[
+        // The maximum number supported is 79,228,162,514,264,337,593,543,950,335
+        "79228162514264337593543950336",
+        "79228162514264337593543950337",
+        "79228162514264337593543950338",
+        "79228162514264337593543950339",
+        "79228162514264337593543950340",
+    ];
+    for &value in tests {
+        assert!(
+            Decimal::from_str(value).is_err(),
+            "This succeeded unexpectedly: {}",
+            value
+        );
+    }
+}
+
+#[test]
 fn it_can_parse_individual_parts() {
     let pi = Decimal::from_parts(1102470952, 185874565, 1703060790, false, 28);
     assert_eq!(pi.to_string(), "3.1415926535897932384626433832");
@@ -1351,6 +1370,23 @@ fn it_can_parse_different_radix() {
         ("78", 10, true, "78"),
         ("78", 8, false, ""),
         ("101", 2, true, "5"),
+        // Parse base 2
+        ("1111_1111_1111_1111_1111_1111_1111_1111", 2, true, "4294967295"),
+        // Max supported value
+        (
+            "1111_1111_1111_1111_1111_1111_1111_1111_1111_1111_1111_\
+          1111_1111_1111_1111_1111_1111_1111_1111_1111_1111_1111_1111_1111",
+            2,
+            true,
+            &Decimal::max_value().to_string(),
+        ),
+        // We limit to 28 dp
+        (
+            "843.6500000000000000000000000000",
+            10,
+            true,
+            "843.6500000000000000000000000",
+        ),
     ];
 
     for &(input, radix, success, expected) in tests {
@@ -1542,4 +1578,34 @@ fn it_computes_equal_hashes_for_positive_and_negative_zero() {
     let h1 = hash_it(k1);
     let h2 = hash_it(k2);
     assert_eq!(h1, h2);
+}
+
+#[test]
+#[should_panic]
+fn it_handles_i128_min() {
+    Decimal::from_i128_with_scale(std::i128::MIN, 0);
+}
+
+#[test]
+fn it_can_rescale() {
+    let tests = &[
+        ("0.12345600000", 6, "0.123456"),
+        ("0.123456", 12, "0.123456000000"),
+        ("0.123456", 0, "0"),
+        ("0.000001", 4, "0.0000"),
+        ("1233456", 4, "1233456.0000"),
+        ("1.2", 30, "1.2000000000000000000000000000"),
+        ("79228162514264337593543950335", 0, "79228162514264337593543950335"),
+        ("4951760157141521099596496895", 1, "4951760157141521099596496895.0"),
+        ("4951760157141521099596496896", 1, "4951760157141521099596496896.0"),
+        ("18446744073709551615", 6, "18446744073709551615.000000"),
+        ("-18446744073709551615", 6, "-18446744073709551615.000000"),
+    ];
+
+    for &(value_raw, new_scale, expected_value) in tests {
+        let new_value = Decimal::from_str(expected_value).unwrap();
+        let mut value = Decimal::from_str(value_raw).unwrap();
+        value.rescale(new_scale);
+        assert_eq!(new_value.to_string(), value.to_string());
+    }
 }
